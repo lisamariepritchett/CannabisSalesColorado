@@ -7,6 +7,18 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+#Clear environment
+rm(list=ls())
+library(dplyr)
+library(stringr) 
+library(tidyr)
+library(ggplot2)
+library(XLConnect) # reads excel
+library(leaflet) # creates maps
+library(prettydoc) # html formatting
+source("http://peterhaschke.com/Code/multiplot.R")
+
+
 setwd('../data')
 source('get_data.R')
 ```
@@ -15,12 +27,21 @@ source('get_data.R')
 
 
 
-```{r }
+```{r}
 # options for users
 my_kind = c('Combined','medical','recreational')[3]
-my_dollartype = c('USD Total','perCapita','perStore')[1]
+my_y = c('USD','perCapita','perStore')[1]
 estimate_option = T
 
+# Select on the y chosen
+#y_total=select(my_summary,my_y)
+
+
+
+
+
+# Select on the y chosen
+#y_total=select(my_summary,my_y)
 
 
 # Create summary for each County and Type, summing sales across years  
@@ -35,44 +56,72 @@ cannabis.summary <- cannabis.sales %>%
             filter(!is.na(County))
 
 # Filter to only include 1 kind
-my_summary = cannabis.summary %>% filter(kind==my_kind) %>% arrange(USD)
+my_summary = cannabis.summary %>% filter(kind==my_kind)
 
-if (estimate_option){ 
-            my_summary_plot <- my_summary %>% group_by(County) %>% 
-                        summarise(n.stores=mean(n.stores),
-                                  latitude=mean(latitude),
-                                  longitude=mean(longitude),
-                                  USD.total=sum(USD),
-                                  perCapita.total=sum(perCapita),
-                                  perStore.total=sum(perStore))
-            my_summary_reported <- filter(my_summary,!is.Estimate) %>% 
-                        select(County,USD:perStore) %>% 
-                        rename(USD.reported=USD,
-                               perCapita.reported=perCapita,
-                               perStore.reported=perStore)
-            my_summary_plot <- full_join(my_summary_plot,my_summary_reported)
+# Sum sales from Reported and NR
+my_summary_plot <- my_summary %>% group_by(County) %>% 
+            summarise(n.stores=mean(n.stores),
+                      latitude=mean(latitude),
+                      longitude=mean(longitude),
+                      USD.total=sum(USD),
+                      perCapita.total=sum(perCapita),
+                      perStore.total=sum(perStore))
+
+# Get only the Reported 
+my_summary_reported <- filter(my_summary,!is.Estimate) %>% 
+            select(County,USD:perStore) %>% 
+            rename(USD.reported=USD,
+                   perCapita.reported=perCapita,
+                   perStore.reported=perStore)
+
+# Join Summed Reproted + NR and only Reported
+my_summary_plot <- full_join(my_summary_plot,my_summary_reported)
             
             
-            
-} else {
-            mysummary_plot <- filter(my_summary,!is.Estimate)
-}
+
 
 my_summary_plot
 ```
 
 
 
-```{r}
+```{r }
+# user option
+radiusscale = 1
+
 
 no_cannabis <- my_summary_plot %>% filter(USD.total==0)
 with_cannabis <- my_summary_plot %>% filter(USD.total>0)
 with_reports <- my_summary_plot %>% filter(USD.reported>0)
+only_estimates <- my_summary_plot %>% filter(USD.reported==0 & USD.total>0)
 
-radiusscale = 1
+#
 mycannabissalesmap <- my_summary_plot %>% 
             leaflet() %>% addProviderTiles(providers$CartoDB) %>% 
             setView(lat=40,lng=-105,zoom=6)
+
+if (estimate_option) {
+            
+            
+            mycannabissalesmap <- mycannabissalesmap %>%
+                        addCircles(lat=with_cannabis$latitude, 
+                       lng=with_cannabis$longitude,
+                       radius = sqrt(with_cannabis$USD.total*radiusscale),
+                       label=paste(with_cannabis$County,': Report $',
+                                   as.character(round(with_cannabis$USD.reported/10^6,1)),
+                                   ', Estimate $',
+                                   as.character(round(with_cannabis$USD.total/10^6,1)),
+                                   ' Million USD', sep=''),
+                       color='gray',weight=1,fillOpacity = 0.3) 
+} else{
+            
+            mycannabissalesmap <- mycannabissalesmap %>% 
+                        addCircles(lat=only_estimates$latitude, 
+                       lng=only_estimates$longitude,
+                       radius = 1,
+                       label=paste(only_estimates$County,': NR', sep=''),
+                       color='red',weight=1)
+}
 
 mycannabissalesmap <- mycannabissalesmap %>% 
             addCircles(lat=with_reports$latitude, 
@@ -81,28 +130,14 @@ mycannabissalesmap <- mycannabissalesmap %>%
                        label=paste(with_reports$County,': Report $',
                                    as.character(round(with_reports$USD.reported/10^6,1)),
                                    ' Million USD', sep=''),
-                       color='#66CD00',weight = 0,fillOpacity = .3)
+                       color='darkgreen',weight = 1,fillOpacity = .3)
 
-mycannabissalesmap %>% 
-            addCircles()
-
-if (estimate_option) {
-            
-            
-            addCircles(lat=with_cannabis$latitude, 
-                       lng=with_cannabis$longitude,
-                       radius = sqrt(with_cannabis$USD.total*radiusscale),
-                       label=paste(with_cannabis$County,': Report $',
-                                   as.character(round(with_cannabis$USD.reported/10^6,1)),
-                                   ', Estimate $',
-                                   as.character(round(with_cannabis$USD.total/10^6,1)),
-                                   ' Million USD', sep=''),
-                       color='#236B8E',weight=0,fillOpacity = 0.3) 
-}
+mycannabissalesmap <- mycannabissalesmap %>% 
+            addCircles(lat=no_cannabis$latitude, lng=no_cannabis$longitude,
+                       radius=1, weight=1, color='blue',
+                       label=paste(no_cannabis$County, '-'))
 
 
-            
-            
-            
-            #mycannabissalesmap
-            ```
+
+mycannabissalesmap
+```
