@@ -1,6 +1,13 @@
+# get zipcodes
+zip_file = 'data/zip_codes_states.csv'
+if(!file.exists(zip_file)){
+        url = 'http://notebook.gaslampmedia.com/wp-content/uploads/2013/08/zip_codes_states.csv'
+}
+co_zipcodes <- read.csv(zip_file, stringsAsFactors = F) %>% filter(state=='CO')
 
+        
 # download medical outlets
-medfile = 'medcenters.xlsx'
+medfile = 'data/medcenters.xlsx'
 if(!file.exists(medfile)){
         med_storesurl <- 'https://www.colorado.gov/pacific/sites/default/files/Centers%2001022018.xlsx'
         download.file(med_storesurl,medfile, mode = 'wb')
@@ -21,11 +28,8 @@ med_stores <- left_join(med_stores,co_zipcodes, by="zip_code")
 
 
 
-
-
-
 retailsurl = 'https://www.colorado.gov/pacific/sites/default/files/Stores%2001022018.xlsx'
-retailfile = 'retailcenters.xlsx'
+retailfile = 'data/retailcenters.xlsx'
 if(!file.exists(retailfile)){
         download.file(retailsurl,retailfile, mode = 'wb')}
 
@@ -58,6 +62,16 @@ n.combined_county <- combined_stores %>% group_by(County=county) %>% summarise(C
 county_n.stores <- full_join(n.med_county,n.retail_county,by='County')
 county_n.stores <- full_join(county_n.stores,n.combined_county,by='County')
 county_n.stores <- county_n.stores %>% gather(key='kind', value='n.stores', -County)
+
+
+# Calculate Porportion of stores in each county
+county_n.stores <- county_n.stores %>% 
+        group_by(County,kind) %>% 
+        summarise(n.stores=sum(n.stores, na.rm=T)) %>% 
+        ungroup() %>% 
+        mutate(freq=n.stores/sum(n.stores)) %>% 
+        filter(!is.na(County))
+
 
 # Remove objects made in processing
 rm(medfile,retailfile,retailsurl, n.med_county,n.retail_county,n.combined_county)

@@ -1,11 +1,12 @@
 # Get Cannabis Data from excel files and preprocess into tidy dataframe
 
+# track current environment to help clean up at the end of this chunk
 enter_envir <- ls()
 
 # Create codes to paste into urls for data for each month
 # Make string codes for 2014 to 2016
 codes = c()
-for (year in c('14', '15', '16','16')) {
+for (year in c('14', '15', '16')) {
         for (month in str_pad(1:12, 2, pad = '0')) {
                 codes = c(codes,paste(month, year, sep = ''))
         }
@@ -13,7 +14,8 @@ for (year in c('14', '15', '16','16')) {
 # Add on what is available for 2017
 codes = c(codes,paste(str_pad(1:10,2,pad='0'),'17',sep = ''))
 
-#Loop through codes, downloading data for each month and saving in a dataframe
+# Loop through codes, reading each excel sheet and saving into dataframes
+# Sets aside the "NR" No Report Counties 
 medical.sales = data.frame(County='')
 recreational.sales = data.frame(County='')
 medical.NR = data.frame(County='')
@@ -24,14 +26,13 @@ for (code in codes) {
                       code,
                       '_MarijuanaSalesReport%20PUBLISH.xlsx',
                       sep = '')
-        destfile = paste('salesdata/cannabissales_',code,'.xlsx',sep='')
+        destfile = paste('data/salesdata/cannabissales_',code,'.xlsx',sep='')
         
         # download file if not yet downloaded
         if (!file.exists(destfile)){
                 download.file(myurl,destfile=destfile, mode = 'wb')}
         
         # Read in Medical sales Data from file
-        wb = loadWorkbook(destfile)
         med1 = readWorksheetFromFile(file = destfile,
                                      sheet = 'Sheet1',
                                      startRow = 6, endRow = 44, 
@@ -55,38 +56,35 @@ for (code in codes) {
         medNR = med1[med1[2]=='NR', ] %>% filter(!is.na(County))
         recNR = rec1[rec1[2]=='NR', ] %>% filter(!is.na(County))
         
-        
-        # Replace NR with average of the NR Counties for each month
+        # medical NR: Replace NR with average of the NR Counties for each month
         medtotalNR = med1[med1$County=='Sum of NR Counties 4',][[2]]
         medtotalNR = gsub('[$,]','',medtotalNR) %>% as.numeric()
         medavgNR = medtotalNR / sum(medNR[,2]=='NR')
         medNR[,2] = gsub('NR',medavgNR[1],medNR[,2])
         
-        # Replace NR with average of the NR Counties for each month
+        # recreational NR: Replace NR with average of the NR Counties for each month
         rectotalNR = rec1[rec1$County=='Sum of NR Counties 4',][[2]]
         rectotalNR = gsub('[$,]','',rectotalNR) %>% as.numeric()
         recavgNR = rectotalNR / sum(recNR[,2]=='NR')
         recNR[,2] = gsub('NR',recavgNR[1], x=recNR[,2])
         
-        
         # join to build dataframes
-        medical.sales = full_join(medical.sales,med1,by='County')
-        recreational.sales = full_join(recreational.sales, rec1,by='County')
+        medical.sales = full_join(medical.sales,med1,by='County') %>% filter(!is.na('County'))
+        recreational.sales = full_join(recreational.sales, rec1,by='County') %>% filter(!is.na('County'))
         medical.NR = full_join(medical.NR,medNR, by='County')
-        recreational.NR = full_join(recreational.NR,recNR, by='County')
+        recreational.NR = full_join  (recreational.NR,recNR, by='County') 
 }
+
 
 
 ##### 
 ## Get list of Colorado Counties
-counties <- read.csv('colorado_county.csv', stringsAsFactors = F) %>% select(1)
+counties <- read.csv('data/colorado_county.csv', stringsAsFactors = F) %>% select(1)
 colnames(counties) = 'County'
-counties <- str_replace(counties$County,' County','')
-
+counties <- str_replace(counties$County,' County','') 
 
 ##### 
-## Gather each dataframe from wide to long making columns for month and and sales 
-# for each type of sales
+## Gather each sales dataframe with key-value pairs for month and sales
 medical.sales <- medical.sales %>% 
         filter(County %in% counties) %>% 
         gather(key='month.year',value='medical.sales', -County)
@@ -96,11 +94,14 @@ recreational.sales <- recreational.sales %>%
         gather(key='month.year',value='recreational.sales', -County)
 
 medical.NR <- medical.NR %>% 
-        gather(key='month.year',value='medical.NR',-County)
+        gather(key='month.year',value='medical.NR',-County) %>% 
+        mutate(medical.NR=as.numeric(medical.NR))
 
 recreational.NR <- recreational.NR %>% 
-        gather(key='month.year',value='recreational.NR',-County)
+        gather(key='month.year',value='recreational.NR',-County) %>% 
+        mutate(recreational.NR = as.numeric(recreational.NR))
 
+##########
 ## Clean sales data, remove dollar signs and commas, coerce to numeric
 medical.sales$medical.sales <- str_replace_all(
         medical.sales$medical.sales,'[$,NR]','') %>% 
@@ -110,7 +111,8 @@ recreational.sales$recreational.sales <- str_replace_all(
         recreational.sales$recreational.sales,'[$,NR ]','') %>% 
         as.numeric()
 
-## Join 4 Types; medical and recreational sales, and then both NR into 
+########
+## Join 4 Types; medical and recreational sales, and then both NR  
 cannabis.sales <- full_join(medical.sales,recreational.sales, 
                             by = c("County", "month.year"))
 cannabis.sales <- full_join(cannabis.sales,medical.NR, 
@@ -118,6 +120,8 @@ cannabis.sales <- full_join(cannabis.sales,medical.NR,
 cannabis.sales <- full_join(cannabis.sales,recreational.NR, 
                             by = c('County','month.year'))
 
+###########
+## Filter out extra rows, coerce data to numeric and date types
 cannabis.sales <- cannabis.sales %>%
         filter(County!='') %>% 
         mutate(medical.NR =as.numeric(medical.NR),
@@ -126,34 +130,19 @@ cannabis.sales <- cannabis.sales %>%
                        as.Date('%d.%B.%Y'),
                year = format(date, '%Y'))
 
-# Add combined sales and combined NR
-cannabis.sales$Combined.sales=rowSums(select(
-        cannabis.sales,medical.sales,recreational.sales), na.rm = T)
-cannabis.sales$Combined.NR=rowSums(select(
-        cannabis.sales,medical.NR,recreational.NR), na.rm = T)
-
-
-
-#####
-## Gather into even longer dataframe
-## Make Sales Type a Factor Variable 
+#################
+## Gather into even longer dataframe with type with key-value pairs for type and USD
 cannabis.sales <- cannabis.sales %>% 
         select(-month.year) %>% 
         gather(key = 'type', value = 'USD', -County, -year, -date)
 
-# make dummy variables to help track sales type 
+# make dummy variables
 cannabis.sales$is.medical = str_detect(cannabis.sales$type,'medical')
-cannabis.sales$is.Combined = str_detect(cannabis.sales$type,'Combined')
 cannabis.sales$is.Estimate = str_detect(cannabis.sales$type,'NR')
 cannabis.sales$kind = str_extract(cannabis.sales$type,'[aA-zZ]*')
 
-
-
-# reorder columns
-cannabis.sales <- cannabis.sales %>%
-        as_tibble()
-
-
+#clean up working environment
 rm(list = setdiff(ls(),c('cannabis.sales',enter_envir)))
 
-
+cannabis.sales <- cannabis.sales %>% as_tibble()
+cannabis.sales

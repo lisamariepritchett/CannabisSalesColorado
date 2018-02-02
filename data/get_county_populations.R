@@ -1,4 +1,4 @@
-countyfile = 'colorado_populations_components-change-county.csv'
+countyfile = 'data/colorado_populations_components-change-county.csv'
 if(!file.exists(countyfile)){
         url = 'https://storage.googleapis.com/co-publicdata/components-change-county.csv'
         download.file(url,countyfile)
@@ -14,7 +14,7 @@ county_populations <- read.csv(countyfile, stringsAsFactors = F) %>%
         select(County_ID,year,Population)
 
 # Read in Counties to match County names with IDs
-county_IDs <- read.csv('colorado_county.csv', stringsAsFactors = F) %>% select(1:2)
+county_IDs <- read.csv('data/colorado_county.csv', stringsAsFactors = F) %>% select(1:2)
 colnames(county_IDs) <- c('County','County_ID')
 
 # Join Counties with county_populations to add County Names

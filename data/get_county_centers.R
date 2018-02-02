@@ -1,4 +1,4 @@
-zip_file = 'zip_codes_states.csv'
+zip_file = 'data/zip_codes_states.csv'
 if(!file.exists(zip_file)){
         url = 'http://notebook.gaslampmedia.com/wp-content/uploads/2013/08/zip_codes_states.csv'
         download.file(url,zip_file)}

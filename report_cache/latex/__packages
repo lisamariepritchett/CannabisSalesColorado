@@ -1,0 +1,13 @@
+base
+knitr
+dplyr
+stringr
+tidyr
+ggplot2
+XLConnectJars
+XLConnect
+leaflet
+prettydoc
+lattice
+caret
+bindrcpp
