@@ -28,10 +28,10 @@ source("http://peterhaschke.com/Code/multiplot.R")
 
 The state of Colorado has had legal recreational cannabis usage since 2014. In that time, more thant 4 Million dollars of Cannabis has been sold across the state fueling the local economies. 
 
-The state regularly publishes the monthly cannabis sales [here](https://www.colorado.gov/pacific/revenue/colorado-marijuana-sales-reports) in each county, with only a few exceptions.
+The state regularly publishes the [monthly cannabis sales](https://www.colorado.gov/pacific/revenue/colorado-marijuana-sales-reports) in each county, with only a few exceptions.
 The exceptions are those counties where the sales data is from less than 3 tax-payers (store owners). In these cases, for privacy, the state combines these counties and reports the Sum of all No Report ("NR") Counties. 
 
-I estimate the sales in the NR Counties with linear regression to predict the amount of sales based on the county population and number of stores. Future work can add more predictors such as presence of regulations and more demographic information. I use those predictions and the known Sum of NR Counties to arrive at an estimate for the monthly sales in each of the NR Counties.
+I estimate the sales in the NR Counties with linear regression to predict the amount of sales based on the county population and number of stores. Future work can add more predictors such as presence of regulations and more demographic information. I use those predictions and the known Sum of NR Counties to arrive at an estimate for the monthly sales in each of the NR Counties. This could be extended to try to predict what cannabis sales would be in other states or countries (if we assume those markets would be like Colorado?). Many other predictor variables should be added and more data collected to improve predictions. 
 
 
 ### Get Supporting Data
@@ -65,10 +65,10 @@ FrontRange <- c(GreaterDenverArea, 'Larimer','Weld','Pueblo')
 ```
 
 The area of each of the circles represnets the population of the county it is centered around. 
-We can see Denver is the population center. 
-Several counties representing the Denver Metro Area (DMA). 
-The next largest counties Boulder and El Paso (Colorado Springs) are adjascent to the DMA, and make up the Greater Denver Area. 
-The population is most dense along the Front Range spanning from Larimer County (Ft Collins) to Pueblo. The only county outside the front range with more than 100,000 people is Mesa (Grand Junction) at the western border.
+Denver is the population center of the state, with several counties making up what is known as the Denver Metro Area (DMA). 
+
+The next largest counties in the state are Boulder and El Paso (Colorado Springs) are adjascent to the DMA, and make up what can be called the Greater Denver Area. 
+Finally, the Front Range spans from Larimer County (Ft Collins) to Pueblo along Interstate 25. The only county outside the Front Range with more than 100,000 people is Mesa (Grand Junction) at the western border.
 
 Next we can plot the density of cannabis stores across the state. Below a cluster map is used to show the density of licensed medical and retail outlets across the state. 
 
@@ -86,8 +86,7 @@ combined_stores %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>%
 
 This interactive visualization illustrates the density of cannabis retail outlets across the state. I have combined medical and recreational outlets counting each unique address only once (even if it was licensed for both medical and retail sale). Individual markers point to the center of the zipcode where the store is located. Labels indicate the zipcode, licensee, and whehter the outlet is licensed for medical and retial sales. 
 
-There are `r filter(county_n.stores,kind=='Combined') %>% select(n.stores) %>% sum()` licensed cannabis outlets across the state (a few not shown due to geocoding problem with their zipcodes). Of those, 
-`r sum(filter(county_n.stores,County=='Denver') %>% select(n.stores))` or 
+There are `r filter(county_n.stores,kind=='Combined') %>% select(n.stores) %>% sum()` licensed cannabis outlets across the state (a few not shown due to geocoding problem with their zipcodes). Of those,
  `r round(sum(filter(county_n.stores,County=='Denver') %>% select(freq)*100))`% are within the County of Denver,
  `r round(sum(filter(county_n.stores,County %in% DenverMetroArea) %>% select(freq)*100))`% are within the Denver Metro Area,
  `r round(sum(filter(county_n.stores,County %in% GreaterDenverArea) %>% select(freq)*100))`% are within the Greater Denver Area, and
@@ -122,7 +121,7 @@ combined_stores <- left_join(combined_stores,co_zipcodes)
 
 ### Improve Estimates for NR Counties
 
-I can use the data I have to make better predictions about the amount of sales in the NR Counties. So far I have replaced NR with the Sum of NR / Number of NR, thus each NR estimate is the average amongst the NR Counties for that month. This assumes that the stores in tiny San Juan County (poplation about 700) sells as much as the stores in larger El Paso County (population 700,000). Both Counties have only two recreational cannabis outlets and are regularly reported as NR.
+I can use the data I have to make better predictions about the amount of sales in the NR Counties. So far the way I have filled in the missing data assumes that the stores in tiny San Juan County (poplation about 700) sells as much as the stores in larger El Paso County (population 700,000). Both Counties have only two recreational cannabis outlets and are regularly reported as NR.
 
 I improve the estimates using a linear model where I predict sales as a function of number of stores, county population, and outlet kind (medical/recreational).
 
@@ -182,7 +181,7 @@ NRCounties %>% ggplot(aes(x=Population, color=factor(n.stores),
 
 The plots above show the predicted sales as a function of population, number of stores, and type. 
 This model predicts that `r NRCounties$predict %>% sum(na.rm=T)/10^6` Million will be sold in these counties overall. 
-However, the state reports that the actual total amount across these counties is  
+However, the state reports that the actual total amount across these counties is 
 `r NRCounties$USD %>% sum(na.rm=T) /10^6` Million USD. I correct this in the code below, keeping the porportion of sales between NR Counties as predicted by my model, but scaling so that the sum adds to the known totals.
 
 ```{r checksum}
