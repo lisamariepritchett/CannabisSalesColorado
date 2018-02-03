@@ -12,7 +12,7 @@ for (year in c('14', '15', '16')) {
         }
 }
 # Add on what is available for 2017
-codes = c(codes,paste(str_pad(1:10,2,pad='0'),'17',sep = ''))
+codes = c(codes,paste(str_pad(1:11,2,pad='0'),'17',sep = ''))
 
 # Loop through codes, reading each excel sheet and saving into dataframes
 # Sets aside the "NR" No Report Counties 
