@@ -3,7 +3,8 @@ title: "Cannabis Sales in Colorado Counties"
 author: "Lisa Marie Pritchett"
 date: "January 23, 2018"
 output:
-  html_document: default
+  html_document:
+    keep_md: yes
   pdf_document: default
 header-includes: \usepackage{bbm}
 ---
@@ -23,7 +24,6 @@ library(leaflet) # creates maps
 library(prettydoc) # html formatting
 library(caret)
 source("http://peterhaschke.com/Code/multiplot.R")
-
 ```
 
 
@@ -51,7 +51,7 @@ The scripts return data regarding each county in Colorado and its population for
 Next I visualize the population density using a Leaflet plot:
 
 
-```{r}
+```{r plotpopulation, out.width='100%'}
 county_details <- inner_join(county_centers,county_populations, by="County")
 county_details %>% leaflet() %>% addProviderTiles(providers$Stamen.Terrain) %>% 
         addCircles(radius=sqrt(county_details$Population*2000), weight=0.5,
@@ -65,11 +65,15 @@ GreaterDenverArea <- c(DenverMetroArea, 'Boulder', 'El Paso')
 FrontRange <- c(GreaterDenverArea, 'Larimer','Weld','Pueblo')
 ```
 
-The area of each of the circles represnets the population of the county. We can see Denver is the population center with several counties representing the Denver Metro Area (DMA). The next largest counties Boulder and El Paso (Colorado Springs) are adjascent to the DMA, and make up the Greater Denver Area. The population is most dense along the Front Range spanning from Larimer County (Ft Collins) to Pueblo. The only county outside the front range with more than 100,000 people is Mesa (Grand Junction) at the western border.
+The area of each of the circles represnets the population of the county it is centered around. 
+We can see Denver is the population center. 
+Several counties representing the Denver Metro Area (DMA). 
+The next largest counties Boulder and El Paso (Colorado Springs) are adjascent to the DMA, and make up the Greater Denver Area. 
+The population is most dense along the Front Range spanning from Larimer County (Ft Collins) to Pueblo. The only county outside the front range with more than 100,000 people is Mesa (Grand Junction) at the western border.
 
 Next we can plot the density of cannabis stores across the state. Below a cluster map is used to show the density of licensed medical and retail outlets across the state. 
 
-```{r, out.width='100%'}
+```{r storecluster, out.width='100%'}
 combined_stores %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>% 
         addMarkers(clusterOptions = markerClusterOptions(), 
                    label = paste(combined_stores$zip_code,
@@ -93,7 +97,8 @@ There are `r filter(county_n.stores,kind=='Combined') %>% select(n.stores) %>% s
 
 ### Get Cannabis Sales Data
 
-The State of Colorado publishes its report of cannabis sales in an excel spreadsheet for each month so the data needs to be gathered across dozens of files. The code to download, read, and combine the data is available on my github. In addition, I track the Sum of NR Counties so that I can use that information to estimate the sales in the counties where  data is not available.
+The State of Colorado publishes its report of cannabis sales in an excel spreadsheet for each month so the data needs to be gathered across dozens of files. The state publishes the total amount of sales reported in each county except in counties where less than 3 taxpayers report sales, in that case they omit the report for the county (label it NR in published data) and combine it with the other NR couties to report the overall Sum of NR Counties. In the code at data/get_sales.R I replaced the "NR" values with the known Sum of NR Counties divided by the number of NR Counties. Thus filling in the missing data such that the totals will add up to the totals reported by the state.
+
 
 ```{r get_sales, cache=T}
 source('data/get_sales.R')
@@ -102,7 +107,7 @@ source('data/get_sales.R')
 
 ### Join 
 
-Now I combine the cannabis sales data and other supporting data. Then I calculate the amount of Cannabis sales per Capita and per Store in each county. Historical information on licensed stores should be added to improve perStore accuracy.
+Now I combine the cannabis sales data and other supporting data. 
 
 ```{r join_data_sets}
 ## Join county details with cannabis sales 
@@ -116,12 +121,16 @@ combined_stores <- left_join(combined_stores,co_zipcodes)
 ```
 
 
-## Improve Estimates for NR Counties
+### Improve Estimates for NR Counties
 
-I can use the data I have to improve the accuracy of the estimates for the counties that are No-Report "NR" due to having too few tax-payers. Here I make a simple linear model predicting sales as a function of type (recreational/medical), population, and number of stores. I train the model on 70% of the data I have and test it on a hold-out set of 30%. 
+I can use the data I have to make better predictions about the amount of sales in the NR Counties. So far I have replaced NR with the Sum of NR / Number of NR, thus each NR estimate is the average amongst the NR Counties for that month. This assumes that the stores in tiny San Juan County (poplation about 700) sells as much as the stores in larger El Paso County (population 700,000). Both Counties have only two recreational cannabis outlets and are regularly reported as NR.
+
+I improve the estimates using a linear model where I predict sales as a function of number of stores, county population, and outlet kind (medical/recreational). The code below shows a plot of the 
 
 
-```{r, out.width='50%', fig.show='hold'}
+#### Fit Model 
+
+```{r trainlm, out.width='70%', fig.show='hold'}
 # cases to fit a linear model to
 data <- cannabis.sales[complete.cases(cannabis.sales),] %>% 
         filter(!is.Estimate, USD>0, n.stores>0)
@@ -132,28 +141,24 @@ InTrain <- createDataPartition(data$USD,p = .7, list = F)
 train <- data[InTrain,]
 test <- data[-InTrain,]
 
-train %>% ggplot(aes(x=log(Population), color=log(n.stores), shape=is.medical, y=log(USD))) + 
-        geom_point() + 
-        stat_smooth(method = 'lm', color='black') +
+train %>% 
+        ggplot(aes(x=log(Population),color=log(n.stores), 
+                   shape=is.medical, y=log(USD))) + 
+        geom_point(alpha=.5,size=3) + 
+        stat_smooth(method = 'lm', alpha=.5) 
         ylim(c(10,18))
 
-test %>% ggplot(aes(x=log(Population), color=n.stores, shape=is.medical, y=log(USD))) + 
-        geom_point() + 
-        stat_smooth(method = 'lm', data = train, color='black') + 
-        stat_smooth(method = 'lm', data = test, linetype=2) +
-        ylim(c(10,18))
 
-sales.lmfit <- train(log(USD) ~ log(Population) + log(n.stores) + is.medical, data=train, method='lm')
+sales.lmfit <- train(log(USD) ~  log(n.stores) + log(Population)  + is.medical, data=train, method='lm')
 summary(sales.lmfit)
 ```
 
 
-The plot on the left above shows the fit of the linear model on the training data. On the right I show the fit to the training data in black and the fit to the testing data in blue. This demonstrates that the linear fit is low-variance and high-bias. More predictor variables should be added to improve model accuracy. This simple linear model accounts for _R^{2}_ = 
-`r round(sales.lmfit$results$Rsquared*100)`% of the variance in sales.
+The plot  above shows the fit of the linear model. More predictor variables could be added to improve model accuracy. This simple model accounts for more than 86% of observed varaince in log sales. 
 
+#### Predict Sales in Counties Not Reporting (NR)
 
-
-```{r out.width='50%', fig.show='hold'}
+```{r predictNR, out.width='50%', fig.show='hold'}
 # Now Make Predictions for Sales in NR Counties.
 
 # Filter only cases which were NR.I change n.stores to be no higher than 2 because I know all the counties had 2 or fewer tax payers when they were NR. Some are higer than 2 because I only have current store counts not historical store counts. 
@@ -164,11 +169,14 @@ NRCounties <- cannabis.sales %>%
 
 NRCounties$predict <- exp(predict(sales.lmfit,NRCounties))
 
-NRCounties %>% ggplot(aes(x=log(Population), color=log(n.stores), shape=is.medical, y=log(predict))) + 
-        geom_point() 
+NRCounties %>% ggplot(aes(x=log(Population), color=factor(n.stores), shape=is.medical, y=log(predict))) + 
+        geom_point(size=3) +
+        scale_color_manual(values = c('navy','cornflowerblue'))
 
-NRCounties %>% ggplot(aes(x=Population, color=n.stores, shape=is.medical, y=predict)) + 
-        geom_point() 
+NRCounties %>% ggplot(aes(x=Population, color=factor(n.stores),
+                          shape=is.medical, y=predict)) + 
+        geom_point(size=3)  +
+        scale_color_manual(values = c('navy','cornflowerblue'))
 
 
 ```
@@ -178,7 +186,7 @@ This model predicts that `r NRCounties$predict %>% sum(na.rm=T)/10^6` Million wi
 However, the state reports that the actual total amount across these counties is  
 `r NRCounties$USD %>% sum(na.rm=T) /10^6` Million USD. I correct this in the code below, keeping the porportion of sales between NR Counties as predicted by my model, but scaling so that the sum adds to the known totals.
 
-```{r}
+```{r checksum}
  NRCounties <- NRCounties %>% group_by(date) %>% 
         mutate(USD.portion = predict / sum(predict),
                USD.newpredict = USD.portion * sum(USD)) %>% 
@@ -190,12 +198,12 @@ NRCounties <- NRCounties %>% mutate(USD=USD.newpredict) %>%
         select(colnames(cannabis.sales))
 ```
 
-The output above shows that the known totals and my predicted totals for each of the first 10 months are exactly equal. In addition, the overall total now sums to the same figure reported by the state:
+The output above shows that the known totals and my transformed predicted totals for each of the first 10 months are exactly equal. In addition, the overall total now sums to the same figure reported by the state:
 `r sum(NRCounties$USD)/10^6` Million USD.
 
 Next I filter out my old estimates and replace them with these new estimates.
 
-```{r}
+```{r replace}
 # Replace in cannabis.sales 
 # Filter out rows with old estimates
 cannabis.sales <- cannabis.sales %>% filter(!is.Estimate)
@@ -219,61 +227,16 @@ Now I'm ready to make plots showing the distribution of cannabis sales across th
 
 ### Make Plots
 
-```{r multibar, fig.width=7,fig.height=6}
-cannabis.sales <- cannabis.sales %>%
-        mutate(type=factor(type, levels = c('recreational.sales', 
-                                            'medical.sales',
-                                            'recreational.NR', 
-                                            'medical.NR')))
-
-denver <- cannabis.sales %>% filter(County == 'Denver') %>% 
-        ggplot(aes(x='       Denver', y=USD/10^9, fill=type)) + 
-        geom_bar(stat="identity") + 
-        labs(title='Total Cannabis Sales in Colorado, Medical and Recreational By County',
-             y='Billions USD',x='') +
-        scale_fill_manual(values = alpha(c('seagreen3','springgreen4'), 0.7)) +
-        scale_y_continuous(position = "right")+ coord_flip() +
-        theme(legend.position = 'none') +
-        ylim(0,2)
-
-allothers <- cannabis.sales %>% arrange(County,type) %>% 
-        filter(County != 'Denver') %>% 
-        ggplot(aes(x=County, y=USD/10^6, fill=type)) + 
-        geom_bar(stat="identity", position = 'stack') + 
-        coord_flip() + ylab('Millions of USD') +
-        ylim(c(0,450)) +
-        scale_fill_manual(values = alpha(c('seagreen3','springgreen4','gray60','gray20'), 0.7))
-
-
-multiplot(plotlist = list(denver,allothers), layout = matrix(c(1,2,2,2,2), nrow=5, byrow = T))
-
-```
-
-```{r barplots, fig.width=7,fig.height=6}
-cannabis.sales %>% 
-        ggplot(aes(x=County, y=perCapita, fill=type)) + 
-        geom_bar(stat="identity", position = 'stack') + 
-        coord_flip() +
-        scale_fill_manual(values = alpha(c('steelblue1','steelblue4','gray60','gray20'), 0.7)) +
-        labs(title='Total Sales per Capita in each County', y='USD')
-
-cannabis.sales %>% 
-        ggplot(aes(x=County, y=perStore/10^6, fill=type)) + 
-        geom_bar(stat="identity", position = 'stack') + 
-        coord_flip() + 
-        #ylim(c(0,450))# +
-        scale_fill_manual(values = alpha(c('orchid','darkorchid4','gray60','gray20'), 0.7)) +
-        labs(title='Total Sales perStore in each County', y='Millions of USD')
-
-```
 
 
 
-#### Format Data for Map Plot Total Sales 
 
 
 
-```{r, out.width='100%'}
+
+
+
+```{r USDmap, out.width='100%'}
 cannabis.totals <- cannabis.sales %>% group_by(County,type,latitude,longitude) %>% 
         summarise(USD=sum(USD, na.rm = T),
                   perCapita=sum(perCapita, na.rm=T),
@@ -286,9 +249,9 @@ myplotdata <- cannabis.totals %>% select(County,type,latitude,longitude,USD) %>%
                CombinedNr_plus_plus_rec = sum(CombinedNr_plus_med, recreational.sales,na.rm=T),
                label = paste(County, ':$', 
                              round((CombinedNr_plus_plus_rec-Combined.NR)/10^6),
-                             'MillionReported+$',
+                             ' Million Reported+$',
                              round(Combined.NR/10^6),
-                             'MillionEstimated',
+                             ' Million Estimated',
                              sep='')
         ) %>% 
         arrange(desc(CombinedNr_plus_plus_rec))
@@ -318,7 +281,7 @@ myplotdata %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>%
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$medical.NR*radiusscale),
-                   color='#8b0046',weight=0,fillOpacity = 0.25,
+                   color='black',weight=0,fillOpacity = 0.25,
                    label=myplotdata$label
         ) %>% 
         addCircles(lat=nocannabis$latitude,
@@ -327,11 +290,40 @@ myplotdata %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>%
                    color='red',  weight=0,
                    label=paste(nocannabis$County,'-'))
 ```
+```{r USDbar, fig.width=7,fig.height=6}
+cannabis.sales <- cannabis.sales %>%
+        mutate(type=factor(type, levels = c('recreational.sales', 
+                                            'medical.sales',
+                                            'recreational.NR', 
+                                            'medical.NR')))
+
+denver <- cannabis.sales %>% filter(County == 'Denver') %>% 
+        ggplot(aes(x='       Denver', y=USD/10^9, fill=type)) + 
+        geom_bar(stat="identity") + 
+        labs(title='Total Cannabis Sales in Colorado, Medical and Recreational By County',
+             y='Billions USD',x='') +
+        scale_fill_manual(values = alpha(c('seagreen3','springgreen4'), 0.7)) +
+        scale_y_continuous(position = "right")+ coord_flip() +
+        theme(legend.position = 'none') +
+        ylim(0,2)
+
+allothers <- cannabis.sales %>% arrange(County,type) %>% 
+        filter(County != 'Denver') %>% 
+        ggplot(aes(x=County, y=USD/10^6, fill=type)) + 
+        geom_bar(stat="identity", position = 'stack') + 
+        coord_flip() + ylab('Millions of USD') +
+        ylim(c(0,450)) +
+        scale_fill_manual(values = alpha(c('seagreen3','springgreen4','gray60','gray20'), 0.7))
+
+
+multiplot(plotlist = list(denver,allothers), layout = matrix(c(1,2,2,2,2), nrow=5, byrow = T))
+
+```
 
 
 #### Per Capita
 
-```{r,  out.width='100%'}
+```{r perCapitamap,  out.width='100%'}
 myplotdata <- cannabis.totals %>% select(County,type,latitude,longitude,perCapita) %>% 
         spread(key=type,value=perCapita) %>% 
         mutate(Combined.NR = sum(medical.NR,recreational.NR,na.rm=T),
@@ -372,7 +364,7 @@ myplotdata %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>%
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$medical.NR*radiusscale),
-                   color='c25b00',weight=0,fillOpacity = 0.25,
+                   color='black',weight=0,fillOpacity = 0.25,
                    label=myplotdata$label
         ) %>% 
         addCircles(lat=nocannabis$latitude,
@@ -382,8 +374,18 @@ myplotdata %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>%
                    label=paste(nocannabis$County,'-'))
 ```
 
+```{r perCapita, fig.width=7,fig.height=6}
+cannabis.sales %>% 
+        ggplot(aes(x=County, y=perCapita, fill=type)) + 
+        geom_bar(stat="identity", position = 'stack') + 
+        coord_flip() +
+        scale_fill_manual(values = alpha(c('steelblue1','steelblue4','gray60','gray20'), 0.7)) +
+        labs(title='Total Sales per Capita in each County', y='USD')
+```
+
+
 #### Per Store
-```{r,  out.width='100%'}
+```{r perStoremap,  out.width='100%'}
 myplotdata <- cannabis.totals %>% select(County,type,latitude,longitude,perStore) %>% 
         spread(key=type,value=perStore) %>% 
         mutate(Combined.NR = sum(medical.NR,recreational.NR,na.rm=T),
@@ -391,9 +393,9 @@ myplotdata <- cannabis.totals %>% select(County,type,latitude,longitude,perStore
                CombinedNr_plus_plus_rec = sum(CombinedNr_plus_med, recreational.sales,na.rm=T),
                label = paste(County, ':$', 
                              round((CombinedNr_plus_plus_rec-Combined.NR)/10^6),
-                             'MillionReported+$',
+                             ' Million Reported+$',
                              round(Combined.NR/10^6),
-                             'MillionEstimated',
+                             ' Million Estimated',
                              sep='')
         ) %>% 
         arrange(desc(CombinedNr_plus_plus_rec))
@@ -423,7 +425,7 @@ myplotdata %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>%
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$medical.NR*radiusscale),
-                   color='#227e13',weight=0,fillOpacity = .25,
+                   color='black',weight=0,fillOpacity = .25,
                    label=myplotdata$label
         ) %>% 
         addCircles(lat=nocannabis$latitude,
@@ -435,5 +437,16 @@ myplotdata %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>%
 ```
 
 
+
+```{r perStore, fig.width=7,fig.height=6}
+cannabis.sales %>% 
+        ggplot(aes(x=County, y=perStore/10^6, fill=type)) + 
+        geom_bar(stat="identity", position = 'stack') + 
+        coord_flip() + 
+        #ylim(c(0,450))# +
+        scale_fill_manual(values = alpha(c('orchid','darkorchid4','gray60','gray20'), 0.7)) +
+        labs(title='Total Sales perStore in each County', y='Millions of USD')
+
+```
 
 
