@@ -1,12 +1,11 @@
 ---
 title: "Cannabis Sales in Colorado Counties"
 author: "Lisa Marie Pritchett"
-date: "January 23, 2018"
+date: "February 2, 2018"
 output:
-  html_document:
-    keep_md: yes
-  pdf_document: default
-header-includes: \usepackage{bbm}
+  prettydoc::html_pretty:
+    theme: hpstr
+    highlight: github
 ---
 
 ```{r setup, include=FALSE, warning=F, message=F,}
@@ -29,7 +28,7 @@ source("http://peterhaschke.com/Code/multiplot.R")
 
 The state of Colorado has had legal recreational cannabis usage since 2014. In that time, more thant 4 Million dollars of Cannabis has been sold across the state fueling the local economies. 
 
-The state regularly publishes the monthly cannabis sales in each county, with only a few exceptions.
+The state regularly publishes the monthly cannabis sales [here](https://www.colorado.gov/pacific/revenue/colorado-marijuana-sales-reports) in each county, with only a few exceptions.
 The exceptions are those counties where the sales data is from less than 3 tax-payers (store owners). In these cases, for privacy, the state combines these counties and reports the Sum of all No Report ("NR") Counties. 
 
 I estimate the sales in the NR Counties with linear regression to predict the amount of sales based on the county population and number of stores. Future work can add more predictors such as presence of regulations and more demographic information. I use those predictions and the known Sum of NR Counties to arrive at an estimate for the monthly sales in each of the NR Counties.
@@ -46,7 +45,7 @@ source('data/get_county_centers.R')
 source('data/get_stores.R')
 ```
 
-The scripts return data regarding each county in Colorado and its population for each year between 2014 and 2017. I also download a list of all of the medical and recreational cannabis outlets across the state. Note this is a current list. Historical information on medical and retail outles is available at the state website, but it is published as pdf files which are particularly hard to scrape. 
+The scripts return the county locations, populations, and all medical and retail outlets across the state. Note this is a current list of outlets. Historical information on medical and retail outles is available at the state website, but it is published as pdf files which are particularly hard to scrape. 
 
 Next I visualize the population density using a Leaflet plot:
 
@@ -100,7 +99,7 @@ There are `r filter(county_n.stores,kind=='Combined') %>% select(n.stores) %>% s
 The State of Colorado publishes its report of cannabis sales in an excel spreadsheet for each month so the data needs to be gathered across dozens of files. The state publishes the total amount of sales reported in each county except in counties where less than 3 taxpayers report sales, in that case they omit the report for the county (label it NR in published data) and combine it with the other NR couties to report the overall Sum of NR Counties. In the code at data/get_sales.R I replaced the "NR" values with the known Sum of NR Counties divided by the number of NR Counties. Thus filling in the missing data such that the totals will add up to the totals reported by the state.
 
 
-```{r get_sales, cache=T}
+```{r get_sales, cache=F}
 source('data/get_sales.R')
 ```
 
@@ -125,7 +124,7 @@ combined_stores <- left_join(combined_stores,co_zipcodes)
 
 I can use the data I have to make better predictions about the amount of sales in the NR Counties. So far I have replaced NR with the Sum of NR / Number of NR, thus each NR estimate is the average amongst the NR Counties for that month. This assumes that the stores in tiny San Juan County (poplation about 700) sells as much as the stores in larger El Paso County (population 700,000). Both Counties have only two recreational cannabis outlets and are regularly reported as NR.
 
-I improve the estimates using a linear model where I predict sales as a function of number of stores, county population, and outlet kind (medical/recreational). The code below shows a plot of the 
+I improve the estimates using a linear model where I predict sales as a function of number of stores, county population, and outlet kind (medical/recreational).
 
 
 #### Fit Model 
@@ -146,10 +145,10 @@ train %>%
                    shape=is.medical, y=log(USD))) + 
         geom_point(alpha=.5,size=3) + 
         stat_smooth(method = 'lm', alpha=.5) 
-        ylim(c(10,18))
 
 
-sales.lmfit <- train(log(USD) ~  log(n.stores) + log(Population)  + is.medical, data=train, method='lm')
+sales.lmfit <- train(log(USD) ~ log(n.stores)+log(Population)+is.medical,
+                     data=train, method='lm')
 summary(sales.lmfit)
 ```
 
@@ -193,9 +192,6 @@ However, the state reports that the actual total amount across these counties is
         arrange(desc(USD.portion))
 
 NRCounties %>% group_by(date) %>% summarise(known.total=sum(USD),predicted.total=sum(USD.newpredict))
-
-NRCounties <- NRCounties %>% mutate(USD=USD.newpredict) %>% 
-        select(colnames(cannabis.sales))
 ```
 
 The output above shows that the known totals and my transformed predicted totals for each of the first 10 months are exactly equal. In addition, the overall total now sums to the same figure reported by the state:
@@ -204,6 +200,9 @@ The output above shows that the known totals and my transformed predicted totals
 Next I filter out my old estimates and replace them with these new estimates.
 
 ```{r replace}
+NRCounties <- NRCounties %>% mutate(USD=USD.newpredict) %>% 
+        select(colnames(cannabis.sales))
+
 # Replace in cannabis.sales 
 # Filter out rows with old estimates
 cannabis.sales <- cannabis.sales %>% filter(!is.Estimate)
@@ -264,32 +263,31 @@ myplotdata %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>%
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$CombinedNr_plus_plus_rec*radiusscale),
                    color='#008b45',weight=1,fillOpacity = 0.25,
-                   label=myplotdata$label
-        ) %>% 
+                   label=myplotdata$label) %>% 
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$CombinedNr_plus_med*radiusscale),
                    color='#008b45',weight=0,fillOpacity = 0.25,
-                   label=myplotdata$label                   
-        ) %>% 
+                   label=myplotdata$label) %>% 
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$Combined.NR*radiusscale),
                    color='#8b0046',weight=0,fillOpacity = 0.25,
-                   label = myplotdata$label
-        ) %>% 
+                   label = myplotdata$label) %>% 
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$medical.NR*radiusscale),
                    color='black',weight=0,fillOpacity = 0.25,
-                   label=myplotdata$label
-        ) %>% 
+                   label=myplotdata$label) %>% 
         addCircles(lat=nocannabis$latitude,
                    lng=nocannabis$longitude,
                    radius=10,
                    color='red',  weight=0,
                    label=paste(nocannabis$County,'-'))
 ```
+
+
+
 ```{r USDbar, fig.width=7,fig.height=6}
 cannabis.sales <- cannabis.sales %>%
         mutate(type=factor(type, levels = c('recreational.sales', 
@@ -315,7 +313,6 @@ allothers <- cannabis.sales %>% arrange(County,type) %>%
         ylim(c(0,450)) +
         scale_fill_manual(values = alpha(c('seagreen3','springgreen4','gray60','gray20'), 0.7))
 
-
 multiplot(plotlist = list(denver,allothers), layout = matrix(c(1,2,2,2,2), nrow=5, byrow = T))
 
 ```
@@ -334,11 +331,9 @@ myplotdata <- cannabis.totals %>% select(County,type,latitude,longitude,perCapit
                              ' Reported+$',
                              round(Combined.NR),
                              ' Estimated',
-                             sep='')
-        ) %>% 
+                             sep='')) %>% 
         arrange(desc(CombinedNr_plus_plus_rec))
 nocannabis <- county_centers[!(county_centers$County %in% cannabis.totals$County),]
-
 radiusscale=10^5
 myplotdata %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>% 
         # Show the biggest circles 
@@ -346,27 +341,22 @@ myplotdata %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>%
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$CombinedNr_plus_plus_rec*radiusscale),
                    color='#0067C2',weight=1,fillOpacity = 0.25,
-                   label=myplotdata$label
-        ) %>% 
-        
+                   label=myplotdata$label) %>%
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$CombinedNr_plus_med*radiusscale),
                    color='#0067C2',weight=0,fillOpacity = 0.25,
-                   label=myplotdata$label                   
-        ) %>% 
+                   label=myplotdata$label) %>% 
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$Combined.NR*radiusscale),
                    color='#c25b00',weight=0,fillOpacity = 0.25,
-                   label = myplotdata$label
-        ) %>% 
+                   label = myplotdata$label) %>% 
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$medical.NR*radiusscale),
                    color='black',weight=0,fillOpacity = 0.25,
-                   label=myplotdata$label
-        ) %>% 
+                   label=myplotdata$label) %>% 
         addCircles(lat=nocannabis$latitude,
                    lng=nocannabis$longitude,
                    radius=10,
@@ -386,7 +376,7 @@ cannabis.sales %>%
 
 #### Per Store
 ```{r perStoremap,  out.width='100%'}
-myplotdata <- cannabis.totals %>% select(County,type,latitude,longitude,perStore) %>% 
+myplotdata <- cannabis.totals %>% select(County,type,latitude,longitude,perStore) %>%
         spread(key=type,value=perStore) %>% 
         mutate(Combined.NR = sum(medical.NR,recreational.NR,na.rm=T),
                CombinedNr_plus_med = sum(Combined.NR, medical.sales, na.rm=T),
@@ -396,8 +386,7 @@ myplotdata <- cannabis.totals %>% select(County,type,latitude,longitude,perStore
                              ' Million Reported+$',
                              round(Combined.NR/10^6),
                              ' Million Estimated',
-                             sep='')
-        ) %>% 
+                             sep='')) %>% 
         arrange(desc(CombinedNr_plus_plus_rec))
 nocannabis <- county_centers[!(county_centers$County %in% cannabis.totals$County),]
 
@@ -408,26 +397,22 @@ myplotdata %>% leaflet() %>% addProviderTiles(providers$CartoDB) %>%
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$CombinedNr_plus_plus_rec*radiusscale),
                    color='#6F137E',weight=1,fillOpacity = 0.25,
-                   label=myplotdata$label
-        ) %>% 
+                   label=myplotdata$label) %>% 
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$CombinedNr_plus_med*radiusscale),
                    color='#6F137E',weight=0,fillOpacity = 0.25,
-                   label=myplotdata$label                   
-        ) %>% 
+                   label=myplotdata$label) %>% 
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$Combined.NR*radiusscale),
                    color='#227e13',weight=0,fillOpacity = .25,
-                   label = myplotdata$label
-        ) %>% 
+                   label = myplotdata$label) %>% 
         addCircles(lat=myplotdata$latitude, 
                    lng=myplotdata$longitude,
                    radius = sqrt(myplotdata$medical.NR*radiusscale),
                    color='black',weight=0,fillOpacity = .25,
-                   label=myplotdata$label
-        ) %>% 
+                   label=myplotdata$label) %>% 
         addCircles(lat=nocannabis$latitude,
                    lng=nocannabis$longitude,
                    radius=10,
